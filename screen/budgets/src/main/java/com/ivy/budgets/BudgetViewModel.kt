@@ -233,34 +233,38 @@ class BudgetViewModel @Inject constructor(
         val accountsFilter = budget.parseAccountIds()
         val categoryFilter = budget.parseCategoryIds()
 
-        return transactions
+        val filteredTransaction = transactions
             .filter { accountsFilter.isEmpty() || accountsFilter.contains(it.getAccountId()) }
             .filter { categoryFilter.isEmpty() || categoryFilter.contains(it.category?.value) }
-            .sumOfSuspend {
-                when (it) {
-                    is Income -> {
-                        0.0 // ignore income
-                    }
 
-                    is Expense -> {
-                        // increment spent amount
-                        exchangeAct(
-                            ExchangeAct.Input(
-                                data = ExchangeData(
-                                    baseCurrency = baseCurrencyCode,
-                                    fromCurrency = trnCurrency(it, accounts, baseCurrencyCode)
-                                ),
-                                amount = it.getValue()
-                            )
-                        ).orNull()?.toDouble() ?: 0.0
-                    }
+        val expense = filteredTransaction.sumOfSuspend {
+            if (it is Expense) exchangeAct(
+                ExchangeAct.Input(
+                    data = ExchangeData(
+                        baseCurrency = baseCurrencyCode,
+                        fromCurrency = trnCurrency(it, accounts, baseCurrencyCode)
+                    ),
+                    amount = it.getValue()
+                )
+            ).orNull()?.toDouble() ?: 0.0 else 0.0
+        }
+        val income = filteredTransaction.sumOfSuspend {
+            if (it is Income) exchangeAct(
+                ExchangeAct.Input(
+                    data = ExchangeData(
+                        baseCurrency = baseCurrencyCode,
+                        fromCurrency = trnCurrency(it, accounts, baseCurrencyCode)
+                    ),
+                    amount = it.getValue()
+                )
+            ).orNull()?.toDouble() ?: 0.0 else 0.0
+        }
 
-                    is Transfer -> {
-                        // ignore transfers for simplicity
-                        0.0
-                    }
-                }
-            }
+        return if (income >= expense) {
+            0.0
+        } else {
+            expense - income
+        }
     }
 
     private fun createBudget(data: CreateBudgetData) {
